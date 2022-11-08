@@ -36,14 +36,13 @@ def build_tokenizer_table(train, vocab_size=1000):
     padded_lens = []
     inst_count = 0
     for episode in train:
-        for inst, _ in episode:
-            inst = preprocess_string(inst)
-            padded_len = 2  # start/end
-            for word in inst.lower().split():
-                if len(word) > 0:
-                    word_list.append(word)
-                    padded_len += 1
-            padded_lens.append(padded_len)
+        inst = preprocess_string(episode[0])
+        padded_len = 2  # start/end
+        for word in inst.lower().split():
+            if len(word) > 0:
+                word_list.append(word)
+                padded_len += 1
+        padded_lens.append(padded_len)
     corpus = Counter(word_list)
     corpus_ = sorted(corpus, key=corpus.get, reverse=True)[
         : vocab_size - 4
@@ -65,7 +64,7 @@ def build_output_tables(train):
     actions = set()
     targets = set()
     for episode in train:
-        for _, outseq in episode:
+        for outseq in episode[1]:
             a, t = outseq
             actions.add(a)
             targets.add(t)
@@ -75,17 +74,18 @@ def build_output_tables(train):
     index_to_targets = {targets_to_index[t]: t for t in targets_to_index}
     return actions_to_index, index_to_actions, targets_to_index, index_to_targets
 
+
 def prefix_match(predicted_labels, gt_labels):
     # predicted and gt are sequences of (action, target) labels, the sequences should be of same length
     # computes how many matching (action, target) labels there are between predicted and gt
-    # is a number between 0 and 1 
+    # is a number between 0 and 1
 
     seq_length = len(gt_labels)
-    
+
     for i in range(seq_length):
         if predicted_labels[i] != gt_labels[i]:
             break
-    
+
     pm = (1.0 / seq_length) * i
 
     return pm

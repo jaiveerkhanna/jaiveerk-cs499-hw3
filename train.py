@@ -2,6 +2,7 @@ import tqdm
 import torch
 import argparse
 from sklearn.metrics import accuracy_score
+import json  # to parse the file
 
 from utils import (
     get_device,
@@ -10,6 +11,58 @@ from utils import (
     build_output_tables,
     prefix_match
 )
+
+
+def encode_data(data, v2i, seq_len, a2i, t2i):
+    # Modified form lecture code's encode data, mine is different because our data is 3 dimensional (2 classses for 1 input)
+
+    n_instructions = len(data[0])
+    n_actions = len(a2i)
+    n_targets = len(t2i)
+
+    x = np.zeros((n_instructions, seq_len), dtype=np.int32)
+    y = np.zeros((n_instructions))
+    z = np.zeros((n_instructions), dtype=np.int32)
+
+    # Don't know if i'll need these variables but might be helpful to track this data
+    idx = 0
+    n_early_cutoff = 0
+    n_unks = 0
+    n_tks = 0
+
+    # WILL DEFINITELY NEED TO REVIEW THIS ITERATION
+    for instruction, classes in data[0]:
+        # they did this in lecture code but is it really necessary, think we did already earlier
+        instruction = preprocess_string(instruction)
+        x[idx][0] = v2i["<start>"]  # add start token
+        jdx = 1
+        for word in instruction.split():
+            if len(word) > 0:
+                x[idx][jdx] = v2i[word] if word in v2i else v2i["<unk>"]
+                # can double check if we want to track unks
+                n_unks += 1 if x[idx][jdx] == v2i["<unk>"] else 0
+                n_tks += 1
+                jdx += 1
+                if jdx == seq_len - 1:
+                    n_early_cutoff += 1
+                    break
+        x[idx][jdx] = v2i["<end>"]
+        # DOUBLE CHECK BELOW CODE BASED ON FINAL ITERATION IMPLEMENTAION : Saving the action and target class for the instruction
+        y[idx] = a2i[classes[0]]
+        z[idx] = t2i[classes[1]]
+        idx += 1
+
+    # COPIED print statements from lecture code to help with debugging
+    """ print(
+        "INFO: had to represent %d/%d (%.4f) tokens as unk with vocab limit %d"
+        % (n_unks, n_tks, n_unks / n_tks, len(v2i))
+    )
+    print(
+        "INFO: cut off %d instances at len %d before true ending"
+        % (n_early_cutoff, seq_len)
+    )
+    print("INFO: encoded %d instances without regard to order" % idx) """
+    return x, y, z
 
 
 def setup_dataloader(args):
@@ -27,6 +80,50 @@ def setup_dataloader(args):
 
     # Hint: use the helper functions provided in utils.py
     # ===================================================== #
+
+    # https://www.geeksforgeeks.org/read-json-file-using-python/
+    # Open file and save as a json object
+    f = open('lang_to_sem_data.json')
+    data = json.load(f)
+
+    # Process the input lines first (create a list of objects that are:  ["input text"],[ ["action classifier"], ["object classifer"]])
+    processed_train_data = []
+    count = 0
+    for episode in data['train']:
+        count += 1
+        if count == 2:
+            break
+        # print(episode) --> correctly looking at one episode at a time
+
+        concat_instructions = ""
+        concat_classifiers = []
+        for step in episode:
+            instruction = preprocess_string(step[0])
+            action_classifier = preprocess_string(step[1][0])
+            target_classifier = preprocess_string(step[1][1])
+
+            concat_instructions += instruction
+            concat_instructions += ". "
+            concat_classifiers.append((action_classifier, target_classifier))
+        # print(concat_instructions)
+        # print(concat_classifiers[0])
+        processed_train_data.append((concat_instructions, concat_classifiers))
+    # print(processed_train_data)
+
+    vocab_to_index, index_to_vocab, len_cutoff = build_tokenizer_table(
+        processed_train_data)
+
+    # print(vocab_to_index)
+    actions_to_index, index_to_actions, targets_to_index, index_to_targets = build_output_tables(
+        processed_train_data)
+    # print(actions_to_index)
+
+    # ENCODE DATA:
+    train_np_x, train_np_y, train_np_z = encode_data(
+        processed_train_data, vocab_to_index, len_cutoff, actions_to_index, targets_to_index)
+
+    exit()
+
     train_loader = None
     val_loader = None
     return train_loader, val_loader
@@ -242,7 +339,8 @@ if __name__ == "__main__":
     )
     parser.add_argument("--force_cpu", action="store_true", help="debug mode")
     parser.add_argument("--eval", action="store_true", help="run eval")
-    parser.add_argument("--num_epochs", default=1000, help="number of training epochs")
+    parser.add_argument("--num_epochs", default=1000,
+                        help="number of training epochs")
     parser.add_argument(
         "--val_every", default=5, help="number of epochs between every eval loop"
     )
