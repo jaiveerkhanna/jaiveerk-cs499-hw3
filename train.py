@@ -3,6 +3,7 @@ import torch
 import argparse
 from sklearn.metrics import accuracy_score
 import json  # to parse the file
+import numpy as np
 
 from utils import (
     get_device,
@@ -16,13 +17,15 @@ from utils import (
 def encode_data(data, v2i, seq_len, a2i, t2i):
     # Modified form lecture code's encode data, mine is different because our data is 3 dimensional (2 classses for 1 input)
 
-    n_instructions = len(data[0])
+    n_instructions = len(data)
     n_actions = len(a2i)
     n_targets = len(t2i)
 
+    max_instruction_size = 20
+
     x = np.zeros((n_instructions, seq_len), dtype=np.int32)
-    y = np.zeros((n_instructions))
-    z = np.zeros((n_instructions), dtype=np.int32)
+    y = np.zeros((n_instructions, max_instruction_size), dtype=np.int32)
+    z = np.zeros((n_instructions, max_instruction_size), dtype=np.int32)
 
     # Don't know if i'll need these variables but might be helpful to track this data
     idx = 0
@@ -31,9 +34,7 @@ def encode_data(data, v2i, seq_len, a2i, t2i):
     n_tks = 0
 
     # WILL DEFINITELY NEED TO REVIEW THIS ITERATION
-    for instruction, classes in data[0]:
-        # they did this in lecture code but is it really necessary, think we did already earlier
-        instruction = preprocess_string(instruction)
+    for instruction, classes in data:
         x[idx][0] = v2i["<start>"]  # add start token
         jdx = 1
         for word in instruction.split():
@@ -47,9 +48,14 @@ def encode_data(data, v2i, seq_len, a2i, t2i):
                     n_early_cutoff += 1
                     break
         x[idx][jdx] = v2i["<end>"]
-        # DOUBLE CHECK BELOW CODE BASED ON FINAL ITERATION IMPLEMENTAION : Saving the action and target class for the instruction
-        y[idx] = a2i[classes[0]]
-        z[idx] = t2i[classes[1]]
+
+        class_idx = 0
+        for act_targ_pair in classes:
+            if class_idx >= max_instruction_size:
+                break
+            y[idx][class_idx] = a2i[act_targ_pair[0]]
+            z[idx][class_idx] = t2i[act_targ_pair[1]]
+            class_idx += 1
         idx += 1
 
     # COPIED print statements from lecture code to help with debugging
@@ -91,7 +97,7 @@ def setup_dataloader(args):
     count = 0
     for episode in data['train']:
         count += 1
-        if count == 2:
+        if count == 5:
             break
         # print(episode) --> correctly looking at one episode at a time
 
@@ -108,7 +114,13 @@ def setup_dataloader(args):
         # print(concat_instructions)
         # print(concat_classifiers[0])
         processed_train_data.append((concat_instructions, concat_classifiers))
-    # print(processed_train_data)
+
+    # Test that each episode is a different index
+    # print(processed_train_data[0])
+    # print("Break")
+    # print(processed_train_data[3])
+    # print(len(processed_train_data)) --> proves that len(data) = number of episodes
+    # exit()
 
     vocab_to_index, index_to_vocab, len_cutoff = build_tokenizer_table(
         processed_train_data)
@@ -122,7 +134,10 @@ def setup_dataloader(args):
     train_np_x, train_np_y, train_np_z = encode_data(
         processed_train_data, vocab_to_index, len_cutoff, actions_to_index, targets_to_index)
 
-    exit()
+    # Test Shape of the Train np arrays
+    # print(train_np_x[0])
+    # print(train_np_y[0])
+    # print(train_np_z[0])
 
     train_loader = None
     val_loader = None

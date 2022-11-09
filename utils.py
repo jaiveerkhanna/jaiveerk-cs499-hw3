@@ -45,13 +45,15 @@ def build_tokenizer_table(train, vocab_size=1000):
         padded_lens.append(padded_len)
     corpus = Counter(word_list)
     corpus_ = sorted(corpus, key=corpus.get, reverse=True)[
-        : vocab_size - 4
+        : vocab_size - 6
     ]  # save room for <pad>, <start>, <end>, and <unk>
-    vocab_to_index = {w: i + 4 for i, w in enumerate(corpus_)}
+    vocab_to_index = {w: i + 6 for i, w in enumerate(corpus_)}
     vocab_to_index["<pad>"] = 0
     vocab_to_index["<start>"] = 1
     vocab_to_index["<end>"] = 2
     vocab_to_index["<unk>"] = 3
+    vocab_to_index["<BOS>"] = 4
+    vocab_to_index["<EOS>"] = 5
     index_to_vocab = {vocab_to_index[w]: w for w in vocab_to_index}
     return (
         vocab_to_index,
