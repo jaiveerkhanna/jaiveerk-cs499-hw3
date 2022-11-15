@@ -4,6 +4,8 @@ import argparse
 from sklearn.metrics import accuracy_score
 import json  # to parse the file
 import numpy as np
+from torch.utils.data import TensorDataset, DataLoader  # pytorch
+import model
 
 from utils import (
     get_device,
@@ -14,14 +16,12 @@ from utils import (
 )
 
 
-def encode_data(data, v2i, seq_len, a2i, t2i):
+def encode_data(data, v2i, seq_len, a2i, t2i, max_instruction_size):
     # Modified form lecture code's encode data, mine is different because our data is 3 dimensional (2 classses for 1 input)
 
     n_instructions = len(data)
     n_actions = len(a2i)
     n_targets = len(t2i)
-
-    max_instruction_size = 20
 
     x = np.zeros((n_instructions, seq_len), dtype=np.int32)
     y = np.zeros((n_instructions, max_instruction_size), dtype=np.int32)
@@ -95,12 +95,12 @@ def setup_dataloader(args):
     # Process the input lines first (create a list of objects that are:  ["input text"],[ ["action classifier"], ["object classifer"]])
     processed_train_data = []
     count = 0
+    max_instruction_size = 0
     for episode in data['train']:
         count += 1
-        if count == 5:
+        if count == 2:
             break
         # print(episode) --> correctly looking at one episode at a time
-
         concat_instructions = ""
         concat_classifiers = []
         for step in episode:
@@ -109,11 +109,17 @@ def setup_dataloader(args):
             target_classifier = preprocess_string(step[1][1])
 
             concat_instructions += instruction
-            concat_instructions += ". "
+            concat_instructions += " "
             concat_classifiers.append((action_classifier, target_classifier))
         # print(concat_instructions)
         # print(concat_classifiers[0])
         processed_train_data.append((concat_instructions, concat_classifiers))
+
+        # Len Concat Classifiers is the number of instructions (N)
+        # print(len(concat_classifiers))
+        num_instructions = len(concat_classifiers)
+        if num_instructions > max_instruction_size:
+            max_instruction_size = num_instructions
 
     # Test that each episode is a different index
     # print(processed_train_data[0])
@@ -125,26 +131,31 @@ def setup_dataloader(args):
     vocab_to_index, index_to_vocab, len_cutoff = build_tokenizer_table(
         processed_train_data)
 
-    # print(vocab_to_index)
     actions_to_index, index_to_actions, targets_to_index, index_to_targets = build_output_tables(
         processed_train_data)
-    # print(actions_to_index)
 
     # ENCODE DATA:
     train_np_x, train_np_y, train_np_z = encode_data(
-        processed_train_data, vocab_to_index, len_cutoff, actions_to_index, targets_to_index)
+        processed_train_data, vocab_to_index, len_cutoff, actions_to_index, targets_to_index, max_instruction_size)
 
-    # Test Shape of the Train np arrays
-    # print(train_np_x[0])
-    # print(train_np_y[0])
-    # print(train_np_z[0])
+    # Tensoring the training set and validation set
+    train_dataset = TensorDataset(torch.from_numpy(
+        train_np_x), torch.from_numpy(train_np_y), torch.from_numpy(train_np_z))
 
-    train_loader = None
+    # print(train_dataset[0])
+    # exit()
+    # Creating data loaders
+    minibatch_size = args.batch_size
+
+    train_loader = DataLoader(
+        train_dataset, shuffle=True, batch_size=minibatch_size)
+
     val_loader = None
-    return train_loader, val_loader
+
+    return train_loader, val_loader, max_instruction_size
 
 
-def setup_model(args):
+def setup_model(args, max_instruction_size):
     """
     return:
         - model: YourOwnModelClass
@@ -166,7 +177,8 @@ def setup_model(args):
     # of feeding the model prediction into the recurrent model,
     # you will give the embedding of the target token.
     # ===================================================== #
-    model = None
+    model = model.EncoderDecoder(
+        vocab_size=1000, embedding_dim=128, max_instruction_size=max_instruction_size, n_actions=4, n_targets=4)
     return model
 
 
@@ -180,10 +192,12 @@ def setup_optimizer(args, model):
     # Task: Initialize the loss function for action predictions
     # and target predictions. Also initialize your optimizer.
     # ===================================================== #
-    criterion = None
-    optimizer = None
+    # using same criterion for actions and targets
+    action_criterion = torch.nn.CrossEntropyLoss()
+    target_criterion = torch.nn.CrossEntropyLoss()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.005)
 
-    return criterion, optimizer
+    return action_criterion, target_criterion, optimizer
 
 
 def train_epoch(
@@ -191,7 +205,8 @@ def train_epoch(
     model,
     loader,
     optimizer,
-    criterion,
+    action_criterion,
+    target_criterion,
     device,
     training=True,
 ):
@@ -211,20 +226,35 @@ def train_epoch(
     # predictions against the ground truth.
     """
 
-    epoch_loss = 0.0
-    epoch_acc = 0.0
+    epoch_action_loss = 0.0
+    epoch_target_loss = 0.0
+
+    # keep track of the model predictions for computing accuracy
+    action_preds = []
+    target_preds = []
+    action_labels = []
+    target_labels = []
 
     # iterate over each batch in the dataloader
     # NOTE: you may have additional outputs from the loader __getitem__, you can modify this
-    for (inputs, labels) in loader:
+    for (inputs, action_class, target_class) in loader:
         # put model inputs to device
-        inputs, labels = inputs.to(device), labels.to(device)
+        inputs, action_class, target_class = inputs.to(
+            device), action_class.to(device), target_class.to(device)
 
         # calculate the loss and train accuracy and perform backprop
         # NOTE: feel free to change the parameters to the model forward pass here + outputs
-        output = model(inputs, labels)
+        actions_out, targets_out = model(inputs)
+        print(actions_out)
+        exit()
+        # NOTE: we assume that labels is a tensor of size Bx2 where labels[:, 0] is the
+        # action label and labels[:, 1] is the target label
+        action_loss = action_criterion(
+            actions_out.squeeze(), action_class[:].long())
+        target_loss = target_criterion(
+            targets_out.squeeze(), target_class[:].long())
 
-        loss = criterion(output.squeeze(), labels[:, 0].long())
+        loss = action_loss + target_loss
 
         # step optimizer and compute gradients during training
         if training:
@@ -234,7 +264,7 @@ def train_epoch(
 
         """
         # TODO: implement code to compute some other metrics between your predicted sequence
-        # of (action, target) labels vs the ground truth sequence. We already provide 
+        # of (action, target) labels vs the ground truth sequence. We already provide
         # exact match and prefix exact match. You can also try to compute longest common subsequence.
         # Feel free to change the input to these functions.
         """
@@ -272,7 +302,8 @@ def validate(args, model, loader, optimizer, criterion, device):
     return val_loss, val_acc
 
 
-def train(args, model, loaders, optimizer, criterion, device):
+def train(args, model, loaders, optimizer, action_criterion,
+          target_criterion, device):
     # Train model for a fixed number of epochs
     # In each epoch we compute loss on each sample in our dataset and update the model
     # weights via backpropagation
@@ -287,7 +318,8 @@ def train(args, model, loaders, optimizer, criterion, device):
             model,
             loaders["train"],
             optimizer,
-            criterion,
+            action_criterion,
+            target_criterion,
             device,
         )
 
@@ -303,7 +335,8 @@ def train(args, model, loaders, optimizer, criterion, device):
                 model,
                 loaders["val"],
                 optimizer,
-                criterion,
+                action_criterion,
+                target_criterion,
                 device,
             )
 
@@ -320,27 +353,33 @@ def main(args):
     device = get_device(args.force_cpu)
 
     # get dataloaders
-    train_loader, val_loader, maps = setup_dataloader(args)
+    train_loader, val_loader, max_instruction_size = setup_dataloader(
+        args)
     loaders = {"train": train_loader, "val": val_loader}
 
     # build model
-    model = setup_model(args, maps, device)
-    print(model)
+   # model = setup_model(args, max_instruction_size, maps, device)
+    model1 = model.EncoderDecoder(
+        vocab_size=1000, embedding_dim=128, max_instruction_size=max_instruction_size, n_actions=8, n_targets=80, device=device)
+    print(model1)
 
     # get optimizer and loss functions
-    criterion, optimizer = setup_optimizer(args, model)
+    action_criterion, target_criterion, optimizer = setup_optimizer(
+        args, model1)
 
     if args.eval:
         val_loss, val_acc = validate(
             args,
-            model,
+            model1,
             loaders["val"],
             optimizer,
-            criterion,
+            action_criterion,
+            target_criterion,
             device,
         )
     else:
-        train(args, model, loaders, optimizer, criterion, device)
+        train(args, model1, loaders, optimizer, action_criterion,
+              target_criterion, device)
 
 
 if __name__ == "__main__":

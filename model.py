@@ -24,17 +24,20 @@ class Encoder(nn.Module):
         # embedding layer
         self.embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=0)
 
-        # RNN
-        self.gru = nn.gru(embedding_dim, embedding_dim)
+        self.lstm = torch.nn.LSTM(
+            embedding_dim, embedding_dim, batch_first=True)
 
-    def forward(self, input, hidden):
-        embedded = self.embedding(input).view(1, 1, -1)
-        output = embedded
-        output, hidden = self.gru(output, hidden)
-        return output, hidden
+    def forward(self, x):
+        # Modified code from : https://pytorch.org/tutorials/beginner/nlp/sequence_models_tutorial.html
+        # Generate embeds
+        embeds = self.embedding(x)
+        lstm_out = self.lstm(embeds)
 
-    def initHidden(self):
-        return torch.zeros(1, 1, self.hidden_size, device=self.device)
+        # need to extract the correct output tensor from lstm model
+        lstm_final = lstm_out[1][0]
+        lstm_final = lstm_final.squeeze()  # lets get rid of the extra dimension
+
+        return lstm_final
 
 
 class Decoder(nn.Module):
@@ -45,38 +48,27 @@ class Decoder(nn.Module):
     TODO: edit the forward pass arguments to suit your needs
     """
 
-    def __init__(self, device, vocab_size, embedding_dim, n_actions,
-                 n_targets):
+    def __init__(self, device, vocab_size, embedding_dim):
         super(Decoder, self).__init__()
         self.device = device
         self.embedding_dim = embedding_dim
-        self.n_actions = n_actions
-        self.n_targets = n_targets
+        # self.n_actions = n_actions
+        # self.n_targets = n_targets
         self.vocab_size = vocab_size
 
         self.embedding = nn.Embedding(vocab_size, embedding_dim)
-        self.gru = nn.GRU(embedding_dim, embedding_dim)
+        self.lstm = torch.nn.LSTM(
+            embedding_dim, embedding_dim, batch_first=True)
 
-        # Here is where implementation changes, need 2 output FC layers
-        self.fc_action = nn.Linear(embedding_dim, n_actions)
-        self.fc_target = nn.Linear(embedding_dim, n_targets)
-        self.softmax = nn.LogSoftmax(dim=1)
+    def forward(self, hidden_encoder, hidden_decoder):
 
-    def forward(self, input, hidden):
-        output = self.embedding(input).view(1, 1, -1)
-        output = F.relu(output)
-        output, hidden = self.gru(output, hidden)
-        # Original Implementation:
-        # output = self.softmax(self.out(output[0]))
+        lstm_out = self.lstm(hidden_encoder, hidden_decoder)
 
-        # My Implementation:
-        action = self.softmax(self.fc_action(output[0]))
-        target = self.softmax(self.fc_target(output[0]))
+        # need to extract the correct output tensor from lstm model
+        lstm_final = lstm_out[1][0]
+        lstm_final = lstm_final.squeeze()  # lets get rid of the extra dimension
 
-        return action, target, hidden
-
-    def initHidden(self):
-        return torch.zeros(1, 1, self.hidden_size, device=device)
+        return lstm_final
 
 
 class EncoderDecoder(nn.Module):
@@ -85,8 +77,37 @@ class EncoderDecoder(nn.Module):
     TODO: edit the forward pass arguments to suit your needs
     """
 
-    def __init__(self):
-        pass
+    def __init__(self, device, vocab_size,
+                 embedding_dim, max_instruction_size, n_actions,
+                 n_targets):
+        super(EncoderDecoder, self).__init__()
+        self.device = device
+        self.embedding_dim = embedding_dim
+        self.vocab_size = vocab_size
+        self.max_instruction_size = max_instruction_size
+        self.n_actions = n_actions
+        self.n_targets = n_targets
+        self.encoder = Encoder(device, vocab_size, embedding_dim)
+        self.decoder = Decoder(device, vocab_size, embedding_dim)
+
+        # Here is where implementation changes, need 2 output FC layers
+        self.fc_action = nn.Linear(embedding_dim, n_actions)
+        self.fc_target = nn.Linear(embedding_dim, n_targets)
 
     def forward(self, x):
-        pass
+        N = self.max_instruction_size
+        hidden_encoder = self.encoder(x)
+        hidden_decoder = hidden_encoder
+        classes = []
+        for idx in range(N):
+            action_pred = self.fc_action(hidden_decoder)
+            target_pred = self.fc_target(hidden_decoder)
+
+            # action_pred = action_pred.argmax(-1)
+            # target_pred = target_pred.argmax(-1)
+
+            print(target_pred)
+            hidden_decoder = self.decoder(
+                [action_pred, target_pred], hidden_decoder)
+            classes.append((action_pred, target_pred))
+        return classes
