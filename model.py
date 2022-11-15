@@ -56,7 +56,7 @@ class Decoder(nn.Module):
         self.n_actions = n_actions
         self.n_targets = n_targets
         # self.vocab_size = vocab_size
-        self.action_embedding = nn.Embedding(n_actions, embedding_dim)
+        self.action_embedding = nn.Embedding(n_actions, int(embedding_dim/2))
         self.target_embedding = nn.Embedding(n_targets, int(embedding_dim/2))
         self.lstm = torch.nn.LSTM(
             embedding_dim, embedding_dim, batch_first=True)
@@ -65,19 +65,22 @@ class Decoder(nn.Module):
 
         action_embeds = self.action_embedding(input_action)
         target_embeds = self.target_embedding(input_target)
+        embeds = torch.cat((action_embeds, target_embeds), 1)
 
-        action_embeds = action_embeds.view(
-            action_embeds.shape[0], 1, self.embedding_dim)
+        embeds = embeds.view(
+            embeds.shape[0], 1, self.embedding_dim)
+
         hidden_decoder = hidden_decoder.view(
-            hidden_decoder.shape[0], 1, self.embedding_dim)
-        print(action_embeds.shape)
-        exit()
-        lstm_out = self.lstm(action_embeds, hidden_decoder)
-        exit()
+            1, embeds.shape[0], -1)
+
+        cell_state = torch.zeros(
+            1, embeds.shape[0], self.embedding_dim)
+
+        lstm_out = self.lstm(embeds, (hidden_decoder, cell_state))
+
         # need to extract the correct output tensor from lstm model
         lstm_final = lstm_out[1][0]
         lstm_final = lstm_final.squeeze()  # lets get rid of the extra dimension
-
         return lstm_final
 
 
