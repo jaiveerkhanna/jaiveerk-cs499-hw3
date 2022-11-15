@@ -33,7 +33,6 @@ class Encoder(nn.Module):
         # Generate embeds
         embeds = self.embedding(x)
         lstm_out = self.lstm(embeds)
-
         # need to extract the correct output tensor from lstm model
         lstm_final = lstm_out[1][0]
         lstm_final = lstm_final.squeeze()  # lets get rid of the extra dimension
@@ -57,20 +56,24 @@ class Decoder(nn.Module):
         self.n_actions = n_actions
         self.n_targets = n_targets
         # self.vocab_size = vocab_size
-
-        self.embedding = nn.Embedding(n_actions+n_targets, embedding_dim)
+        self.action_embedding = nn.Embedding(n_actions, embedding_dim)
+        self.target_embedding = nn.Embedding(n_targets, int(embedding_dim/2))
         self.lstm = torch.nn.LSTM(
             embedding_dim, embedding_dim, batch_first=True)
 
-    def forward(self, input, hidden_decoder):
+    def forward(self, input_action, input_target, hidden_decoder):
 
-        embeds = self.embedding(input)
-        print(input.shape)
-        print(embeds.shape)
-        print(hidden_decoder.shape)
+        action_embeds = self.action_embedding(input_action)
+        target_embeds = self.target_embedding(input_target)
+
+        action_embeds = action_embeds.view(
+            action_embeds.shape[0], 1, self.embedding_dim)
+        hidden_decoder = hidden_decoder.view(
+            hidden_decoder.shape[0], 1, self.embedding_dim)
+        print(action_embeds.shape)
         exit()
-        lstm_out = self.lstm(embeds, hidden_decoder)
-
+        lstm_out = self.lstm(action_embeds, hidden_decoder)
+        exit()
         # need to extract the correct output tensor from lstm model
         lstm_final = lstm_out[1][0]
         lstm_final = lstm_final.squeeze()  # lets get rid of the extra dimension
@@ -117,19 +120,19 @@ class EncoderDecoder(nn.Module):
             pred_sequence.append((action_pred, target_pred))
             pred_space.append((action_space, target_space))
 
-            batch_size = action_space.shape[0]
-            multi_hot_encoding = torch.zeros(
-                batch_size, self.n_actions+self.n_targets, dtype=int)
+            # batch_size = action_space.shape[0]
+            # multi_hot_encoding = torch.zeros(
+            #     batch_size, self.n_actions+self.n_targets, dtype=int)
 
-            for idx in range(action_pred.shape[0]):
-                multi_hot_encoding[idx][action_pred[idx]] = 1
-                multi_hot_encoding[idx][target_pred[idx] +
-                                        self.n_actions] = 1
+            # for idx in range(action_pred.shape[0]):
+            #     multi_hot_encoding[idx][action_pred[idx]] = 1
+            #     multi_hot_encoding[idx][target_pred[idx] +
+            #                             self.n_actions] = 1
             # print(multi_hot_encoding)
             # print(action_pred)
             # print(target_pred)
 
             hidden_decoder = self.decoder(
-                multi_hot_encoding, hidden_decoder)
+                action_pred, target_pred, hidden_decoder)
 
         return pred_space, pred_sequence
