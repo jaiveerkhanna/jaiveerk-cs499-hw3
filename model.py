@@ -3,6 +3,7 @@
 import torch.nn as nn
 import torch
 import torch.nn.functional as F
+import numpy as np
 
 
 class Encoder(nn.Module):
@@ -48,21 +49,27 @@ class Decoder(nn.Module):
     TODO: edit the forward pass arguments to suit your needs
     """
 
-    def __init__(self, device, vocab_size, embedding_dim):
+    def __init__(self, device,  n_actions,
+                 n_targets, embedding_dim):
         super(Decoder, self).__init__()
         self.device = device
         self.embedding_dim = embedding_dim
-        # self.n_actions = n_actions
-        # self.n_targets = n_targets
-        self.vocab_size = vocab_size
+        self.n_actions = n_actions
+        self.n_targets = n_targets
+        # self.vocab_size = vocab_size
 
-        self.embedding = nn.Embedding(vocab_size, embedding_dim)
+        self.embedding = nn.Embedding(n_actions+n_targets, embedding_dim)
         self.lstm = torch.nn.LSTM(
             embedding_dim, embedding_dim, batch_first=True)
 
-    def forward(self, hidden_encoder, hidden_decoder):
+    def forward(self, input, hidden_decoder):
 
-        lstm_out = self.lstm(hidden_encoder, hidden_decoder)
+        embeds = self.embedding(input)
+        print(input.shape)
+        print(embeds.shape)
+        print(hidden_decoder.shape)
+        exit()
+        lstm_out = self.lstm(embeds, hidden_decoder)
 
         # need to extract the correct output tensor from lstm model
         lstm_final = lstm_out[1][0]
@@ -88,7 +95,7 @@ class EncoderDecoder(nn.Module):
         self.n_actions = n_actions
         self.n_targets = n_targets
         self.encoder = Encoder(device, vocab_size, embedding_dim)
-        self.decoder = Decoder(device, vocab_size, embedding_dim)
+        self.decoder = Decoder(device, n_actions, n_targets, embedding_dim)
 
         # Here is where implementation changes, need 2 output FC layers
         self.fc_action = nn.Linear(embedding_dim, n_actions)
@@ -98,16 +105,31 @@ class EncoderDecoder(nn.Module):
         N = self.max_instruction_size
         hidden_encoder = self.encoder(x)
         hidden_decoder = hidden_encoder
-        classes = []
+        pred_sequence = []
+        pred_space = []
         for idx in range(N):
-            action_pred = self.fc_action(hidden_decoder)
-            target_pred = self.fc_target(hidden_decoder)
+            action_space = self.fc_action(hidden_decoder)
+            target_space = self.fc_target(hidden_decoder)
 
-            # action_pred = action_pred.argmax(-1)
-            # target_pred = target_pred.argmax(-1)
+            action_pred = action_space.argmax(-1)
+            target_pred = target_space.argmax(-1)
 
-            print(target_pred)
+            pred_sequence.append((action_pred, target_pred))
+            pred_space.append((action_space, target_space))
+
+            batch_size = action_space.shape[0]
+            multi_hot_encoding = torch.zeros(
+                batch_size, self.n_actions+self.n_targets, dtype=int)
+
+            for idx in range(action_pred.shape[0]):
+                multi_hot_encoding[idx][action_pred[idx]] = 1
+                multi_hot_encoding[idx][target_pred[idx] +
+                                        self.n_actions] = 1
+            # print(multi_hot_encoding)
+            # print(action_pred)
+            # print(target_pred)
+
             hidden_decoder = self.decoder(
-                [action_pred, target_pred], hidden_decoder)
-            classes.append((action_pred, target_pred))
-        return classes
+                multi_hot_encoding, hidden_decoder)
+
+        return pred_space, pred_sequence

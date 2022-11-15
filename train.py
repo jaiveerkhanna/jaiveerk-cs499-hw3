@@ -6,6 +6,7 @@ import json  # to parse the file
 import numpy as np
 from torch.utils.data import TensorDataset, DataLoader  # pytorch
 import model
+import old_model
 
 from utils import (
     get_device,
@@ -98,7 +99,7 @@ def setup_dataloader(args):
     max_instruction_size = 0
     for episode in data['train']:
         count += 1
-        if count == 2:
+        if count == 4:
             break
         # print(episode) --> correctly looking at one episode at a time
         concat_instructions = ""
@@ -152,7 +153,7 @@ def setup_dataloader(args):
 
     val_loader = None
 
-    return train_loader, val_loader, max_instruction_size
+    return train_loader, val_loader, vocab_to_index, actions_to_index, targets_to_index, max_instruction_size
 
 
 def setup_model(args, max_instruction_size):
@@ -242,10 +243,14 @@ def train_epoch(
         inputs, action_class, target_class = inputs.to(
             device), action_class.to(device), target_class.to(device)
 
+        # print(action_class)
+        # print(action_class.shape)
+
         # calculate the loss and train accuracy and perform backprop
         # NOTE: feel free to change the parameters to the model forward pass here + outputs
-        actions_out, targets_out = model(inputs)
-        print(actions_out)
+        pred_space, pred_sequence = model(inputs)
+        print(pred_space)
+        print(pred_sequence)
         exit()
         # NOTE: we assume that labels is a tensor of size Bx2 where labels[:, 0] is the
         # action label and labels[:, 1] is the target label
@@ -353,15 +358,14 @@ def main(args):
     device = get_device(args.force_cpu)
 
     # get dataloaders
-    train_loader, val_loader, max_instruction_size = setup_dataloader(
+    train_loader, val_loader, v2i, a2i, t2i, max_instruction_size = setup_dataloader(
         args)
     loaders = {"train": train_loader, "val": val_loader}
 
     # build model
    # model = setup_model(args, max_instruction_size, maps, device)
     model1 = model.EncoderDecoder(
-        vocab_size=1000, embedding_dim=128, max_instruction_size=max_instruction_size, n_actions=8, n_targets=80, device=device)
-    print(model1)
+        vocab_size=1000, embedding_dim=128, max_instruction_size=max_instruction_size, n_actions=len(a2i), n_targets=len(t2i), device=device)
 
     # get optimizer and loss functions
     action_criterion, target_criterion, optimizer = setup_optimizer(
