@@ -225,7 +225,7 @@ def setup_optimizer(args, model):
     # using same criterion for actions and targets
     action_criterion = torch.nn.CrossEntropyLoss()
     target_criterion = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.005)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.005)
 
     return action_criterion, target_criterion, optimizer
 
