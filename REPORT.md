@@ -22,11 +22,10 @@ DISCLAIMER:
             - attn applied is combined with the decoders input embedings (attn_combined)
             - the combined attention is sent through an lstm with the hidden state of the decoder (lstm in the Encoder Decoder wrapper)
     
-
 Implementation:
     - Train / Test Split:
         - Decided to use the train / valid seen split given from the data
-        - Ran into the error that there were some actions in the val set that were unseen in the train so created an    UNK action and target token
+        - Ran into the error that there were some actions in the val set that were unseen in the train so created an    UNK action and target tokeng
         - Obviously, needed to maintain episodes as 1 entire input so couldnt shuffle that
         - Felt like it was good not to mix the data as I want the model to be able to handle unseen actions/targets. I could have alternatively processed all the data such that every action/target was characterized/had embeddings but chose not to to make the model more resilient to new data
 
