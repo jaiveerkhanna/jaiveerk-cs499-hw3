@@ -1,5 +1,9 @@
  (10pt) Report your results through an .md file in your submission; discuss your implementation choices and document the performance of your models (both training and validation performance) under the conditions you settled on. Compare the base encoder-decoder, encoder-decoder with attention, and transformer-based model performance. Discuss your encoder-decoder attention choices (e.g., flat or hierarchical, recurrent cell used, etc.). Discuss the attention mechanism you implemented for the encoder-decoder model using the taxonomy we discussed in class.
 
+DISCLAIMER:
+    - If you want to examine the model without attention, change line 8 of train.py to : import model_no_attention as model
+    - If you want to examine the model with attention, change line 8 of train.py to : import model_attention as model
+
  Architecture:
     -Encoder Decoder Wrapper Model does the following:
         - Takes input, runs through encoder
@@ -23,7 +27,6 @@ Hyperparameters:
     - Cross Entropy --> worked well for both actions and targets. Since I am using two seperate FC layers to predict action and target, this is a suitable metric
 - Optimizer
     - SGD --> worked well and trained quickly --> initial
-    - SGD initially, but eventually switched to Adam after reviewing project 1 discussion and talks about how Adam might be a more efficient way to do this. After switching, I found this to be true
     - Learning Rate --> 0.005 --> tried a few different and this worked better
 - Embedding Dimensions: 128
     - for the decoder, the embedding layers for the action and target embedding were 1/2 the size (since i used two embedding layers after thinking through / discussing with anthony). I then concatenated both embeddings before passing htat through the decoder LSTM
@@ -38,3 +41,5 @@ Performance:
 
 Bonus:
 - Was not able to implement a transformer model ... which is a bummer but just the reality of how much I could achieve by the deadline
+
+

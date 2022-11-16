@@ -5,7 +5,7 @@ from sklearn.metrics import accuracy_score
 import json  # to parse the file
 import numpy as np
 from torch.utils.data import TensorDataset, DataLoader  # pytorch
-import model
+import model_attention as model
 import matplotlib.pyplot as plt
 
 from utils import (
@@ -99,7 +99,7 @@ def setup_dataloader(args):
     processed_train_data = []
     processed_val_data = []
     count = 0
-    episode_threshold = 100
+    episode_threshold = 1000
     max_instruction_size = 0
     for episode in data['train']:
         count += 1
@@ -225,7 +225,7 @@ def setup_optimizer(args, model):
     # using same criterion for actions and targets
     action_criterion = torch.nn.CrossEntropyLoss()
     target_criterion = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.005)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.005)
 
     return action_criterion, target_criterion, optimizer
 
