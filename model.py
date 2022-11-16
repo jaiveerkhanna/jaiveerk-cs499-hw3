@@ -111,8 +111,15 @@ class EncoderDecoder(nn.Module):
         N = self.max_instruction_size
         hidden_encoder = self.encoder(x)
         hidden_decoder = hidden_encoder
+        batch_size = x.shape[0]
+        # torch.zeros(batch_size, self.max_instruction_size, 2)
         pred_sequence = []
         pred_space = []
+
+        action_output = torch.zeros(
+            batch_size, self.max_instruction_size, self.n_actions)
+        target_output = action_output
+
         for idx in range(N):
             action_space = self.fc_action(hidden_decoder)
             target_space = self.fc_target(hidden_decoder)

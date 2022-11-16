@@ -249,22 +249,32 @@ def train_epoch(
         # calculate the loss and train accuracy and perform backprop
         # NOTE: feel free to change the parameters to the model forward pass here + outputs
         pred_space, pred_sequence = model(inputs)
-        print(pred_space)
-        print(pred_sequence)
-        exit()
+
         # NOTE: we assume that labels is a tensor of size Bx2 where labels[:, 0] is the
         # action label and labels[:, 1] is the target label
-        action_loss = action_criterion(
-            actions_out.squeeze(), action_class[:].long())
-        target_loss = target_criterion(
-            targets_out.squeeze(), target_class[:].long())
 
-        loss = action_loss + target_loss
+        N = len(pred_space)
+        total_loss = 0
+        action_class_transpose = action_class.transpose(1, 0)
+        target_class_transpose = target_class.transpose(1, 0)
+        for idx in range(N):
+            actions_out = pred_space[idx][0]
+            targets_out = pred_space[idx][1]
+
+            action_loss = action_criterion(
+                actions_out.squeeze(), action_class_transpose[idx].long())
+
+            target_loss = target_criterion(
+                targets_out.squeeze(), target_class_transpose[idx].long())
+
+            loss = action_loss + target_loss
+            total_loss += loss
+        print(total_loss)
 
         # step optimizer and compute gradients during training
         if training:
             optimizer.zero_grad()
-            loss.backward()
+            total_loss.backward()
             optimizer.step()
 
         """
@@ -279,7 +289,7 @@ def train_epoch(
         acc = 0.0
 
         # logging
-        epoch_loss += loss.item()
+        epoch_loss += total_loss.item()
         epoch_acc += acc.item()
 
     epoch_loss /= len(loader)
