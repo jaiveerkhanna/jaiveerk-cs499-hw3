@@ -5,7 +5,7 @@ from sklearn.metrics import accuracy_score
 import json  # to parse the file
 import numpy as np
 from torch.utils.data import TensorDataset, DataLoader  # pytorch
-import model_attention as model
+import model_no_attention as model
 import matplotlib.pyplot as plt
 
 from utils import (
