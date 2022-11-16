@@ -6,7 +6,7 @@ import json  # to parse the file
 import numpy as np
 from torch.utils.data import TensorDataset, DataLoader  # pytorch
 import model
-import matplotlib as plt
+import matplotlib.pyplot as plt
 
 from utils import (
     get_device,
