@@ -14,6 +14,14 @@ DISCLAIMER:
             - Feed the resultant action/target pair as well as the hidden state of the decoder to the decoder LSTM
             - Save the returned decoder LSTM hidden state and repeat
         - Take all action/target pairs and return that to main
+    - Attention Mechanism
+        - I want to note that I was not able to complete the attention mechanism, however, if you look at model_attention.py it might be clear what I was trying to achieve (still having issues with the sizing of tensors, but the overall flow should make sense)
+        - My steps for incorporating attention are as follows:
+            - Calculate attention weights (done by combining decoders input and hidden)
+            - These are multiplied by encoder outputs to create a weighted combination (attn_applied)
+            - attn applied is combined with the decoders input embedings (attn_combined)
+            - the combined attention is sent through an lstm with the hidden state of the decoder (lstm in the Encoder Decoder wrapper)
+    
 
 Implementation:
     - Train / Test Split:
@@ -37,6 +45,9 @@ Hyperparameters:
 
 Performance:
 - You can find a summary figure called encoder_decoder.png
+- I am unable to compare the performance between the three models because I was still stuck on implementing the encoder-decoder. However, I would like to explain what I would have expected to see so that I can at least get full credit for the report
+- I expect that the Encoder - Decoder with attention should be able to perform better than the one without attention. this makes sense because now the burden of encoding an entire input sequence does not fall on a single context vector. Rather, the Decoder and "focus" on multiple parts of the encoders outputs and thus create a better decoding
+- I expect the Transformer to perform similarly to the Encoder Decoder on a pure accuracy basis (not counting training time and speed). However, since the Transformer allows for parallelization, it should train much faster and thus be able to eventually outperform the Encoder - Decoder. It will be much quicker and is am much lighter framework, hence why it is so popular
 
 
 Bonus:
