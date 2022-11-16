@@ -6,7 +6,7 @@ import json  # to parse the file
 import numpy as np
 from torch.utils.data import TensorDataset, DataLoader  # pytorch
 import model
-import old_model
+import matplotlib as plt
 
 from utils import (
     get_device,
@@ -54,8 +54,10 @@ def encode_data(data, v2i, seq_len, a2i, t2i, max_instruction_size):
         for act_targ_pair in classes:
             if class_idx >= max_instruction_size:
                 break
-            y[idx][class_idx] = a2i[act_targ_pair[0]]
-            z[idx][class_idx] = t2i[act_targ_pair[1]]
+            y[idx][class_idx] = a2i[act_targ_pair[0]
+                                    ] if act_targ_pair[0] in a2i else a2i["<unk>"]
+            z[idx][class_idx] = t2i[act_targ_pair[1]
+                                    ] if act_targ_pair[1] in t2i else t2i["<unk>"]
             class_idx += 1
         idx += 1
 
@@ -95,11 +97,13 @@ def setup_dataloader(args):
 
     # Process the input lines first (create a list of objects that are:  ["input text"],[ ["action classifier"], ["object classifer"]])
     processed_train_data = []
+    processed_val_data = []
     count = 0
+    episode_threshold = 100
     max_instruction_size = 0
     for episode in data['train']:
         count += 1
-        if count == 4:
+        if count == episode_threshold:
             break
         # print(episode) --> correctly looking at one episode at a time
         concat_instructions = ""
@@ -122,6 +126,24 @@ def setup_dataloader(args):
         if num_instructions > max_instruction_size:
             max_instruction_size = num_instructions
 
+    count = 0
+    for episode in data['valid_seen']:
+        count += 1
+        if count == episode_threshold:
+            break
+        # print(episode) --> correctly looking at one episode at a time
+        concat_instructions = ""
+        concat_classifiers = []
+        for step in episode:
+            instruction = preprocess_string(step[0])
+            action_classifier = preprocess_string(step[1][0])
+            target_classifier = preprocess_string(step[1][1])
+
+            concat_instructions += instruction
+            concat_instructions += " "
+            concat_classifiers.append((action_classifier, target_classifier))
+        processed_val_data.append((concat_instructions, concat_classifiers))
+
     # Test that each episode is a different index
     # print(processed_train_data[0])
     # print("Break")
@@ -139,9 +161,15 @@ def setup_dataloader(args):
     train_np_x, train_np_y, train_np_z = encode_data(
         processed_train_data, vocab_to_index, len_cutoff, actions_to_index, targets_to_index, max_instruction_size)
 
+    val_np_x, val_np_y, val_np_z = encode_data(
+        processed_val_data, vocab_to_index, len_cutoff, actions_to_index, targets_to_index, max_instruction_size)
+
     # Tensoring the training set and validation set
     train_dataset = TensorDataset(torch.from_numpy(
         train_np_x), torch.from_numpy(train_np_y), torch.from_numpy(train_np_z))
+
+    val_dataset = TensorDataset(torch.from_numpy(
+        val_np_x), torch.from_numpy(val_np_y), torch.from_numpy(val_np_z))
 
     # print(train_dataset[0])
     # exit()
@@ -151,7 +179,8 @@ def setup_dataloader(args):
     train_loader = DataLoader(
         train_dataset, shuffle=True, batch_size=minibatch_size)
 
-    val_loader = None
+    val_loader = DataLoader(
+        val_dataset, shuffle=True, batch_size=minibatch_size)
 
     return train_loader, val_loader, vocab_to_index, actions_to_index, targets_to_index, max_instruction_size
 
@@ -227,8 +256,8 @@ def train_epoch(
     # predictions against the ground truth.
     """
 
-    epoch_action_loss = 0.0
-    epoch_target_loss = 0.0
+    epoch_loss = 0.0
+    epoch_acc = 0.0
 
     # keep track of the model predictions for computing accuracy
     action_preds = []
@@ -252,7 +281,6 @@ def train_epoch(
 
         # NOTE: we assume that labels is a tensor of size Bx2 where labels[:, 0] is the
         # action label and labels[:, 1] is the target label
-
         N = len(pred_space)
         total_loss = 0
         action_class_transpose = action_class.transpose(1, 0)
@@ -269,7 +297,6 @@ def train_epoch(
 
             loss = action_loss + target_loss
             total_loss += loss
-        print(total_loss)
 
         # step optimizer and compute gradients during training
         if training:
@@ -284,13 +311,29 @@ def train_epoch(
         # Feel free to change the input to these functions.
         """
         # TODO: add code to log these metrics
-        em = output == labels
-        prefix_em = prefix_em(output, labels)
-        acc = 0.0
+        action_class = action_class.numpy()
+        target_class = target_class.numpy()
+
+        pred_sequence = np.array(pred_sequence)
+        pred_sequence = np.transpose(pred_sequence, (2, 0, 1))
+
+        #print(pred_sequence[:, :, 0])
+        # print(action_class)
+
+        # Raw Accuracy will look at of the total action/targets predicted and actuals, what was the number of exact matches
+        raw_accuracy = np.sum(
+            pred_sequence[:, :, 0] == action_class) + np.sum(pred_sequence[:, :, 1] == target_class)
+        raw_accuracy = raw_accuracy / \
+            (action_class.shape[0]*action_class.shape[1]*2)
+        # print(raw_accuracy)
+
+        # em = output == labels
+        # prefix_em = prefix_em(output, labels)
+        # acc = 0.0
 
         # logging
         epoch_loss += total_loss.item()
-        epoch_acc += acc.item()
+        epoch_acc += raw_accuracy
 
     epoch_loss /= len(loader)
     epoch_acc /= len(loader)
@@ -298,7 +341,8 @@ def train_epoch(
     return epoch_loss, epoch_acc
 
 
-def validate(args, model, loader, optimizer, criterion, device):
+def validate(args, model, loader, optimizer, action_criterion,
+             target_criterion, device):
     # set model to eval mode
     model.eval()
 
@@ -309,7 +353,8 @@ def validate(args, model, loader, optimizer, criterion, device):
             model,
             loader,
             optimizer,
-            criterion,
+            action_criterion,
+            target_criterion,
             device,
             training=False,
         )
@@ -323,6 +368,12 @@ def train(args, model, loaders, optimizer, action_criterion,
     # In each epoch we compute loss on each sample in our dataset and update the model
     # weights via backpropagation
     model.train()
+
+    # Set up tables to collect train/val loss/acc
+    train_loss_summary = []
+    val_loss_summary = []
+    train_acc_summary = []
+    val_acc_summary = []
 
     for epoch in tqdm.tqdm(range(args.num_epochs)):
 
@@ -339,7 +390,10 @@ def train(args, model, loaders, optimizer, action_criterion,
         )
 
         # some logging
-        print(f"train loss : {train_loss}")
+        print(f"train loss : {train_loss} | train acc: {train_acc}")
+        # Within outer for loop, keep track of train loss/acc data
+        train_loss_summary.extend([train_loss])
+        train_acc_summary.extend([train_acc])
 
         # run validation every so often
         # during eval, we run a forward pass through the model and compute
@@ -356,12 +410,34 @@ def train(args, model, loaders, optimizer, action_criterion,
             )
 
             print(f"val loss : {val_loss} | val acc: {val_acc}")
+            # within inner for loop, keep track of val loss/acc data
+            val_loss_summary.extend([val_loss])
+            val_acc_summary.extend([val_acc])
 
     # ================== TODO: CODE HERE ================== #
     # Task: Implement some code to keep track of the model training and
     # evaluation loss. Use the matplotlib library to plot
     # 3 figures for 1) training loss, 2) validation loss, 3) validation accuracy
     # ===================================================== #
+
+    # outside the for loop, print out the summary tables
+    # https://matplotlib.org/stable/gallery/subplots_axes_and_figures/subplots_demo.html
+
+    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2)
+
+    #
+    ax1.set_title("train loss")
+    ax1.plot(train_loss_summary, label="train")
+    #
+    ax2.set_title("val loss")
+    ax2.plot(val_loss_summary, label="val")
+    #
+    ax3.set_title("train accuracy")
+    ax3.plot(train_acc_summary, label="train")
+    #
+    ax4.set_title("val accuracy")
+    ax4.plot(val_acc_summary, label="val")
+    plt.show()
 
 
 def main(args):

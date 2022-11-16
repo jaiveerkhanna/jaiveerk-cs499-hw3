@@ -108,7 +108,7 @@ class EncoderDecoder(nn.Module):
         self.fc_target = nn.Linear(embedding_dim, n_targets)
 
     def forward(self, x):
-        N = self.max_instruction_size
+        N = int(self.max_instruction_size)
         hidden_encoder = self.encoder(x)
         hidden_decoder = hidden_encoder
         batch_size = x.shape[0]
@@ -116,19 +116,12 @@ class EncoderDecoder(nn.Module):
         pred_sequence = []
         pred_space = []
 
-        action_output = torch.zeros(
-            batch_size, self.max_instruction_size, self.n_actions)
-        target_output = action_output
-
         for idx in range(N):
             action_space = self.fc_action(hidden_decoder)
             target_space = self.fc_target(hidden_decoder)
 
             action_pred = action_space.argmax(-1)
             target_pred = target_space.argmax(-1)
-
-            pred_sequence.append((action_pred, target_pred))
-            pred_space.append((action_space, target_space))
 
             # batch_size = action_space.shape[0]
             # multi_hot_encoding = torch.zeros(
@@ -144,5 +137,9 @@ class EncoderDecoder(nn.Module):
 
             hidden_decoder = self.decoder(
                 action_pred, target_pred, hidden_decoder)
+
+            pred_sequence.append((action_pred.tolist(), target_pred.tolist()))
+
+            pred_space.append((action_space, target_space))
 
         return pred_space, pred_sequence
